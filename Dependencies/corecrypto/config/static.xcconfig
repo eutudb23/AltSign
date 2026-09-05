@@ -26,8 +26,9 @@ STRIP_STYLE = debugging
 
 HEADER_SEARCH_PATHS = $(inherited) $(SRCROOT)/acceleratecrypto/Header
 
-OTHER_CFLAGS = -fno-stack-check -DBUILDKERNEL=0 -Wno-error=#warnings -Wno-gnu-folding-constant -Wundef -Wundef-prefix=TARGET_ $(inherited)
-OTHER_CFLAGS[sdk=macosx*] = -Wno-error=#warnings $(inherited)
+OTHER_CFLAGS = -fno-stack-check -DBUILDKERNEL=0 -Wno-error=#warnings -Wno-gnu-folding-constant -Wno-implicit-int-conversion-on-negation -Wundef -Wundef-prefix=TARGET_ $(inherited)
+OTHER_CFLAGS[sdk=macosx*] = -Wno-error=#warnings $(inherited) -Wno-implicit-int-conversion-on-negation
+OTHER_CFLAGS[sdk=iphoneos*] = $(inherited) -Wno-implicit-int-conversion-on-negation
 
 OTHER_CFLAGS_fuzz = -fprofile-instr-generate -fcoverage-mapping -fsanitize=address,fuzzer-no-link
 OTHER_CFLAGS_noasm = -DCC_USE_ASM=0
