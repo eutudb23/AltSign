@@ -254,10 +254,33 @@ private extension ALTAppleAPI
                         var request = self.makeTwoFactorCodeRequest(url: verifyURL, dsid: dsid, idmsToken: idmsToken, anisetteData: anisetteData)
                         request.allHTTPHeaderFields?["security-code"] = verificationCode
                         
-                        let verifyCodeTask = self.session.dataTask(with: request) { (data, response, error) in
+                        // Same reason as sendAuthenticationRequest: this shares the pooled
+                        // connection the sign-in requests already used, so it can land on a
+                        // connection Apple has started 503ing.
+                        let configuration = URLSessionConfiguration.ephemeral
+                        configuration.httpMaximumConnectionsPerHost = 1
+                        let session = URLSession(configuration: configuration)
+                        defer { session.finishTasksAndInvalidate() }
+                        
+                        let verifyCodeTask = session.dataTask(with: request) { (data, response, error) in
                             do
                             {
-                                let responseDictionary = try self.propertyListResponse(data: data, response: response, error: error)
+                                guard let data = data else { throw error ?? ALTAppleAPIError.unknown() }
+                                
+                                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 500
+                                {
+                                    let message = String(format: NSLocalizedString("Apple's authentication servers returned an error (HTTP %d).", comment: ""), httpResponse.statusCode)
+                                    let recoverySuggestion = NSLocalizedString("This is most likely a problem on Apple's end, not with your Apple ID or password.", comment: "")
+                                    throw ALTAppleAPIError(.unknown, userInfo: [
+                                        NSLocalizedFailureReasonErrorKey: message,
+                                        NSLocalizedRecoverySuggestionErrorKey: recoverySuggestion,
+                                        "HTTPErrorCode": httpResponse.statusCode
+                                    ])
+                                }
+                                
+                                guard let responseDictionary = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+                                    throw URLError(.badServerResponse)
+                                }
                                 
                                 let errorCode = responseDictionary["ec"] as? Int ?? 0
                                 guard errorCode != 0 else { return completionHandler(.success(())) }
@@ -520,35 +543,32 @@ private extension ALTAppleAPI
             request.httpBody = bodyData
             httpHeaders.forEach { request.addValue($0.value, forHTTPHeaderField: $0.key) }
             
-            var attempt = 0
+            // Create a new session, and limit the maximum connections to just one at a time.
+            // Otherwise, Apple's servers may reject connections with more than 2 requests.
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.httpMaximumConnectionsPerHost = 1
             
-            func send()
-            {
-            // Apple's GSA edge keeps a connection pinned to a backend node, and once that node
-            // starts failing every subsequent request on the same connection returns 5xx and never
-            // recovers. Retrying over the shared session therefore just repeats the same failure,
-            // so give each attempt its own session to force a new connection.
-            let attemptSession = URLSession(configuration: .ephemeral)
+            let session = URLSession(configuration: configuration)
+            defer { session.finishTasksAndInvalidate() }
             
-            let dataTask = attemptSession.dataTask(with: request) { (data, response, error) in
-                attemptSession.finishTasksAndInvalidate()
-                
-                // A 5xx means the request was never processed, so retrying is safe.
-                if let httpResponse = response as? HTTPURLResponse, (500...599).contains(httpResponse.statusCode), attempt < ALTMaximumGSARetries - 1
-                {
-                    attempt += 1
-                    
-                    let delay = min(pow(2.0, Double(attempt - 1)), 8.0)
-                    DispatchQueue.global().asyncAfter(deadline: .now() + delay) { send() }
-                    
-                    return
-                }
-                
+            let dataTask = session.dataTask(with: request) { (data, response, error) in
                 do
                 {
                     let responseDictionary = try self.propertyListResponse(data: data, response: response, error: error)
                     
-                    guard let dictionary = responseDictionary["Response"] as? [String: Any],
+                    if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 500
+                    {
+                        let message = String(format: NSLocalizedString("Apple's authentication servers returned an error (HTTP %d).", comment: ""), httpResponse.statusCode)
+                        let recoverySuggestion = NSLocalizedString("This is most likely a problem on Apple's end, not with your Apple ID or password.", comment: "")
+                        throw ALTAppleAPIError(.unknown, userInfo: [
+                            NSLocalizedFailureReasonErrorKey: message,
+                            NSLocalizedRecoverySuggestionErrorKey: recoverySuggestion,
+                            "HTTPErrorCode": httpResponse.statusCode
+                        ])
+                    }
+                    
+                    guard let responseDictionary = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                          let dictionary = responseDictionary["Response"] as? [String: Any],
                           let status = dictionary["Status"] as? [String: Any]
                     else { throw self.badServerResponseError(data: data, response: response, underlyingError: nil) }
                                         
