@@ -269,12 +269,14 @@ private extension ALTAppleAPI
                                 
                                 if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 500
                                 {
+                                    let normalizedClientInfo = anisetteData.deviceDescription.lowercased()
+                                    let anisetteClient = normalizedClientInfo.contains("(com.apple.akd/1.0)") ? "akd" : (normalizedClientInfo.contains("(com.apple.dt.xcode/") ? "xcode" : "other")
                                     let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "unknown"
                                     let bodyPreview = String(decoding: data.prefix(256), as: UTF8.self)
                                         .replacingOccurrences(of: "\r", with: " ")
                                         .replacingOccurrences(of: "\n", with: " ")
                                         .trimmingCharacters(in: .whitespacesAndNewlines)
-                                    let debugDescription = "GSA operation: trusted-device-2fa-validate, HTTP \(httpResponse.statusCode), Content-Type: \(contentType), \(data.count) bytes, Body: \(bodyPreview)"
+                                    let debugDescription = "GSA operation: trusted-device-2fa-validate, Anisette client: \(anisetteClient), HTTP \(httpResponse.statusCode), Content-Type: \(contentType), \(data.count) bytes, Body: \(bodyPreview)"
                                     let message = String(format: NSLocalizedString("Apple's authentication servers returned an error (HTTP %d).", comment: ""), httpResponse.statusCode)
                                     let recoverySuggestion = NSLocalizedString("This is most likely a problem on Apple's end, not with your Apple ID or password.", comment: "")
                                     throw ALTAppleAPIError(.unknown, userInfo: [
@@ -282,6 +284,7 @@ private extension ALTAppleAPI
                                         NSLocalizedRecoverySuggestionErrorKey: recoverySuggestion,
                                         NSDebugDescriptionErrorKey: debugDescription,
                                         "GSAOperation": "trusted-device-2fa-validate",
+                                        "AnisetteClient": anisetteClient,
                                         "HTTPErrorCode": httpResponse.statusCode
                                     ])
                                 }
@@ -489,12 +492,14 @@ private extension ALTAppleAPI
                     if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 500
                     {
                         let operation = requestParameters["o"] as? String ?? "unknown"
+                        let normalizedClientInfo = anisetteData.deviceDescription.lowercased()
+                        let anisetteClient = normalizedClientInfo.contains("(com.apple.akd/1.0)") ? "akd" : (normalizedClientInfo.contains("(com.apple.dt.xcode/") ? "xcode" : "other")
                         let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "unknown"
                         let bodyPreview = String(decoding: data.prefix(256), as: UTF8.self)
                             .replacingOccurrences(of: "\r", with: " ")
                             .replacingOccurrences(of: "\n", with: " ")
                             .trimmingCharacters(in: .whitespacesAndNewlines)
-                        let debugDescription = "GSA operation: \(operation), HTTP \(httpResponse.statusCode), Content-Type: \(contentType), \(data.count) bytes, Body: \(bodyPreview)"
+                        let debugDescription = "GSA operation: \(operation), Anisette client: \(anisetteClient), HTTP \(httpResponse.statusCode), Content-Type: \(contentType), \(data.count) bytes, Body: \(bodyPreview)"
                         let message = String(format: NSLocalizedString("Apple's authentication servers returned an error (HTTP %d).", comment: ""), httpResponse.statusCode)
                         let recoverySuggestion = NSLocalizedString("This is most likely a problem on Apple's end, not with your Apple ID or password.", comment: "")
                         throw ALTAppleAPIError(.unknown, userInfo: [
@@ -502,6 +507,7 @@ private extension ALTAppleAPI
                             NSLocalizedRecoverySuggestionErrorKey: recoverySuggestion,
                             NSDebugDescriptionErrorKey: debugDescription,
                             "GSAOperation": operation,
+                            "AnisetteClient": anisetteClient,
                             "HTTPErrorCode": httpResponse.statusCode
                         ])
                     }
